@@ -423,24 +423,9 @@ private fun IrFunction.generateDefaultsFunction(
     if (context.mapping.defaultArgumentsOriginalFunction[this] != null) return null
     context.mapping.defaultArgumentsDispatchFunction[this]?.let { return it }
     if (this is IrSimpleFunction) {
-        // If this is an override of a function with default arguments, produce a fake override of a default stub.
+        // If this is an override of a function with default arguments, do nothing.
         if (overriddenSymbols.any { it.owner.findBaseFunctionWithDefaultArguments(skipInlineMethods, skipExternalMethods) != null })
-            return generateDefaultsFunctionImpl(context, IrDeclarationOrigin.FAKE_OVERRIDE, visibility).also {
-                context.mapping.defaultArgumentsDispatchFunction[this] = it
-                context.mapping.defaultArgumentsOriginalFunction[it] = this
-
-                if (forceSetOverrideSymbols) {
-                    (it as IrSimpleFunction).overriddenSymbols += overriddenSymbols.mapNotNull {
-                        it.owner.generateDefaultsFunction(
-                            context,
-                            skipInlineMethods,
-                            skipExternalMethods,
-                            forceSetOverrideSymbols,
-                            visibility
-                        )?.symbol as IrSimpleFunctionSymbol?
-                    }
-                }
-            }
+            return null
     }
     // Note: this is intentionally done *after* checking for overrides. While normally `override fun`s
     // have no default parameters, there is an exception in case of interface delegation:
