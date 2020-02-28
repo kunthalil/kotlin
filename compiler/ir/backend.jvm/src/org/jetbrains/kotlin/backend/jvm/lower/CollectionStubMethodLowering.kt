@@ -136,12 +136,24 @@ private class CollectionStubMethodLowering(val context: JvmBackendContext) : Cla
         return mutableClass.typeParameters.map { it.symbol }.zip(readOnlyClassTypeArguments).toMap()
     }
 
+    // Preserve old backend's logic to generate stubs for special cases where a mutable method
+    // have same jvm signature with an immutable method.
+    private val specialSignatures = setOf(
+        "listIterator()Ljava/util/ListIterator;",
+        "listIterator(I)Ljava/util/ListIterator;",
+        "subList(II)Ljava/util/List;"
+    )
+
     private inner class StubsForCollectionClass(
         val readOnlyClass: IrClassSymbol,
         val mutableClass: IrClassSymbol
     ) {
         val mutableOnlyMethods: Collection<IrSimpleFunction> by lazy {
-            val readOnlyMethodSignatures = readOnlyClass.functions.map { it.owner.toSignature() }.toHashSet()
+            val readOnlyMethodSignatures = readOnlyClass
+                .functions
+                .map { it.owner.toSignature() }
+                .filter { it !in specialSignatures }
+                .toHashSet()
             mutableClass.functions
                 .map { it.owner }
                 .filter { it.toSignature() !in readOnlyMethodSignatures }
@@ -172,13 +184,25 @@ private class CollectionStubMethodLowering(val context: JvmBackendContext) : Cla
 
     // Compute stubs that should be generated, compare based on signature
     private fun generateRelevantStubMethods(irClass: IrClass): Set<IrSimpleFunction> {
+
+        // For superTypes from java, we only generate stub if all further superTypes which are subtype of the immutable class are interfaces,
+        // i.e. stub methods are not generated in any super type of current class.
+        fun IrClass.shouldGenerateForJava(immutableClassSymbol: IrClassSymbol): Boolean {
+            if (origin != IrDeclarationOrigin.IR_EXTERNAL_JAVA_DECLARATION_STUB)
+                return false
+            val relevantSuperTypes = getAllSupertypes(this)
+                .filter { it.isSubtypeOfClass(immutableClassSymbol) }
+            return relevantSuperTypes.isNotEmpty() && relevantSuperTypes.all { it.isInterface() }
+        }
+
         val ourStubsForCollectionClasses = preComputedStubs.filter { (readOnlyClass, mutableClass) ->
             irClass.superTypes.any { supertypeSymbol ->
                 val supertype = supertypeSymbol.classOrNull?.owner
                 // We need to generate stub methods for following 2 cases:
-                // current class's direct super type is a java class or kotlin interface, and is an subtype of an immutable collection
+                // current class's direct super type is a kotlin interface or is a Java class that requires generation,
+                // and such super type is a subtype of an immutable collection
                 supertype != null
-                        && (supertype.comesFromJava() || supertype.isInterface)
+                        && (supertype.shouldGenerateForJava(readOnlyClass) || supertype.isInterface)
                         && supertypeSymbol.isSubtypeOfClass(readOnlyClass)
                         && !irClass.symbol.isSubtypeOfClass(mutableClass)
             }
@@ -199,8 +223,6 @@ private class CollectionStubMethodLowering(val context: JvmBackendContext) : Cla
             }
         }.toHashSet()
     }
-
-    fun IrClass.comesFromJava() = origin == IrDeclarationOrigin.IR_EXTERNAL_JAVA_DECLARATION_STUB
 
     private fun Collection<IrType>.findMostSpecificTypeForClass(classifier: IrClassSymbol): IrType {
         val types = this.filter { it.classifierOrNull == classifier }
