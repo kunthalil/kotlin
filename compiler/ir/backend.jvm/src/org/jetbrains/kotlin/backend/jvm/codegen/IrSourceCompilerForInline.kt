@@ -127,8 +127,12 @@ class IrSourceCompilerForInline(
         return SMAPAndMethodNode(node!!, SMAP(classCodegen.getOrCreateSourceMapper().resultMappings))
     }
 
-    override fun generateLambdaBody(lambdaInfo: ExpressionLambda): SMAPAndMethodNode =
-        makeInlineNode((lambdaInfo as IrExpressionLambdaImpl).function, codegen.classCodegen, true)
+    override fun generateLambdaBody(lambdaInfo: ExpressionLambda): SMAPAndMethodNode {
+        val function = (lambdaInfo as IrExpressionLambdaImpl).function
+        return makeInlineNode(
+            function, if (lambdaInfo.isCrossInline) codegen.classCodegen else FakeClassCodegen(function, codegen.classCodegen), true
+        )
+    }
 
     override fun doCreateMethodNodeFromSource(
         callableDescriptor: FunctionDescriptor,

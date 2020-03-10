@@ -171,6 +171,8 @@ object IdenticalSourceMapper : SourceMapper {
         get() = null
 
     override fun mapLineNumber(lineNumber: Int) = lineNumber
+
+    override fun mapLineNumber(source: Int, sourceName: String, sourcePath: String) = source
 }
 
 class CallSiteMarker(val lineNumber: Int)
